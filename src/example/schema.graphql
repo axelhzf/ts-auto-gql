@@ -1,7 +1,7 @@
 type Movie {
     id: String!
     title: String!
-    year: Integer!
+    year: Int!
 }
 
 type Query {

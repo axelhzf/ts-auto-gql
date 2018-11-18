@@ -1,20 +1,10 @@
+import { Query } from './schema';
+
 function getMovies() {
-    const movie = Query.movie();
-    console.log(movie.id);
-    console.log(movie.title)
+  const movie = Query.movie();
+  console.log(movie.id);
+  console.log(movie.title);
+  console.log(movie.year);
 }
-
-
-type Movie = {
-    id: string;
-    title: string;
-    year: number;
-}
-
-const Query = {
-    movie() {
-        return {} as Movie;
-    }
-};
 
 console.log(getMovies());

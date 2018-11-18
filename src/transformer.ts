@@ -1,12 +1,13 @@
 import * as ts from 'typescript';
 import { CompilerOptions } from 'typescript';
 
-function getTransformer(/*opts?: Opts*/) {
+// https://astexplorer.net/#/gist/62bc09174807d87fd95f2017ac1fd5e4/2ede6a7032c7a33f27a5ede888177678ea238484
+function getTransformer() {
   function visitor(ctx: ts.TransformationContext, sf: ts.SourceFile) {
     const visitor: ts.Visitor = (node: ts.Node) => {
       if (ts.isFunctionDeclaration(node)) {
         // function declaration
-        const queries: any = [];
+        const queries: Query[] = [];
         const functionVisitor: ts.Visitor = (node: ts.Node) => {
           const queryDefinition = getQueryDefinition(node);
           if (queryDefinition) {
@@ -14,6 +15,19 @@ function getTransformer(/*opts?: Opts*/) {
             queries.push(queryDefinition);
             (node as any).initializer.query = queryDefinition;
           }
+
+          if (ts.isPropertyAccessExpression(node)) {
+            if (ts.isIdentifier(node.expression)) {
+              const variableName = node.expression.text;
+              const query = queries.find(q => q.variableName === variableName);
+              if (query) {
+                if (ts.isIdentifier(node.name)) {
+                  query.properties.push(node.name.text);
+                }
+              }
+            }
+          }
+
           return ts.visitEachChild(node, functionVisitor, ctx);
         };
 
@@ -26,26 +40,50 @@ function getTransformer(/*opts?: Opts*/) {
             if (node.expression.expression.text === 'Query') {
               console.log('found in second pass');
 
-              console.log((node as any).query);
+              const query = (node as any).query as Query;
 
               return ts.createTaggedTemplate(
                 ts.createIdentifier('gql'),
                 [],
-                ts.createNoSubstitutionTemplateLiteral('query { movies { id }}')
+                ts.createNoSubstitutionTemplateLiteral(`
+                  query { 
+                    ${query.base} { 
+                      ${query.properties.join('\n')} 
+                    }
+                  }
+                `)
               );
             }
           }
         }
       }
 
+      if(ts.isImportDeclaration(node)) {
+        if (ts.isStringLiteral(node.moduleSpecifier)) {
+          const text = node.moduleSpecifier.getText();
+          if (text.match(/schema/)) {
+            return undefined;
+          }
+        }
+      }
       return ts.visitEachChild(node, visitor, ctx);
     };
     return visitor;
   }
+
+
+
+
   return (ctx: ts.TransformationContext) => {
     return (sf: ts.SourceFile) => ts.visitNode(sf, visitor(ctx, sf));
   };
 }
+
+type Query = {
+  variableName: string;
+  base: string;
+  properties: string[];
+};
 
 function getQueryExpression(node: ts.Node) {
   if (
@@ -54,17 +92,17 @@ function getQueryExpression(node: ts.Node) {
     ts.isIdentifier(node.expression.expression) &&
     node.expression.expression.text === 'Query'
   ) {
-    return { base: node.expression.name.text };
+    return { base: node.expression.name.text, properties: [] };
   }
 }
 
-function getQueryDefinition(node: ts.Node) {
+function getQueryDefinition(node: ts.Node): Query | undefined {
   if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
     if (!node.initializer) return;
     const variableName = node.name.text;
     const query = getQueryExpression(node.initializer);
     if (!query) return;
-    return { variableName, query };
+    return { variableName, ...query };
   }
 }
 
@@ -81,7 +119,9 @@ function compile() {
     stripInternal: true,
     target: ts.ScriptTarget.ES2018
   });
-  const options: CompilerOptions = {};
+  const options: CompilerOptions = {
+    skipLibCheck: true
+  };
   const program = ts.createProgram(files, options, compilerHost);
 
   let emitResult = program.emit(undefined, undefined, undefined, undefined, {
