@@ -1,0 +1,17 @@
+{
+  "name": "ts-auto-gql",
+  "version": "0.0.1",
+  "description": "Generates graphql queries based on component usage",
+  "main": "index.js",
+  "repository": "https://github.com/axelhzf/ts-auto-gql",
+  "author": "Axel Hernández Ferrera <axelhzf@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@types/node": "^10.12.9",
+    "graphql": "^14.0.2",
+    "graphql-tag": "^2.10.0",
+    "prettier": "^1.15.2",
+    "ts-node": "^7.0.1",
+    "typescript": "^3.1.6"
+  }
+}
