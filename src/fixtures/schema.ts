@@ -2,7 +2,7 @@ interface Person {
   name: string;
 }
 
-interface Movie {
+interface Movie2 {
   __gql: boolean;
   id: string;
   title: string;
@@ -10,8 +10,13 @@ interface Movie {
   director: Person;
 }
 
+/*
+  @query movie
+ */
+type MovieQuery = Movie2;
+
 interface Query {
-  movie(): Movie;
+  movie(): MovieQuery;
 }
 
 export const Query: Query = undefined as any;

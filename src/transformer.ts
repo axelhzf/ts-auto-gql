@@ -1,4 +1,5 @@
 import * as ts from 'typescript';
+import * as _ from 'lodash';
 
 // https://astexplorer.net/#/gist/62bc09174807d87fd95f2017ac1fd5e4/2ede6a7032c7a33f27a5ede888177678ea238484
 export function getTransformer(checker: ts.TypeChecker) {
@@ -9,17 +10,24 @@ export function getTransformer(checker: ts.TypeChecker) {
         const queries: any[] = [];
         const functionVisitor: ts.Visitor = (node: ts.Node) => {
           if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-            const type = checker.getTypeAtLocation(node);
-            if (type) {
-              const property = type.getProperty('__gql');
-              if (property) {
-                // slice detected
+            if (node.initializer) {
+              const variableName = node.name.text;
+              const initializer = node.initializer;
+
+              // TODO this is too fixed?
+              if (
+                ts.isCallExpression(initializer) &&
+                ts.isPropertyAccessExpression(initializer.expression) &&
+                ts.isIdentifier(initializer.expression.expression) &&
+                initializer.expression.expression.text === 'Query'
+              ) {
+                const base = initializer.expression.name.text;
                 const queryDefinition: any = {
                   node: node,
-                  base: type.symbol.getName(),
-                  properties: []
+                  base: base,
+                  properties: {},
+                  variableName
                 };
-                //console.log('found in first pass', queryDefinition);
                 queries.push(queryDefinition);
                 (node as any).initializer.query = queryDefinition;
               }
@@ -29,20 +37,31 @@ export function getTransformer(checker: ts.TypeChecker) {
           // checker.getRootSymbols(checker.getSymbolAtLocation(node))
           // checker.getSymbolAtLocation(node.expression).getDeclarations()
           if (ts.isPropertyAccessExpression(node)) {
-            if (ts.isIdentifier(node.expression)) {
-              const symbol = checker.getSymbolAtLocation(node.expression);
+            const paths = [];
+            let current: any = node;
+            while (ts.isPropertyAccessExpression(current)) {
+              paths.unshift(current.name.text);
+              current = current.expression;
+            }
+
+            if (ts.isIdentifier(current)) {
+              const symbol = checker.getSymbolAtLocation(current);
               if (!symbol) return;
               const declarations = symbol.getDeclarations();
               if (!declarations) return;
               const declaration = declarations[0];
               const query = queries.find(q => q.node === declaration);
               if (query) {
-                query.properties.push(node.name.text);
-                console.log(query.properties);
+                let obj = query.properties;
+                paths.forEach(path => {
+                  if (!obj[path]) {
+                    obj[path] = {}
+                  }
+                  obj = obj[path];
+                });
               }
             }
           }
-
           return ts.visitEachChild(node, functionVisitor, ctx);
         };
 
@@ -53,9 +72,14 @@ export function getTransformer(checker: ts.TypeChecker) {
         if (ts.isPropertyAccessExpression(node.expression)) {
           if (ts.isIdentifier(node.expression.expression)) {
             if (node.expression.expression.text === 'Query') {
-              console.log('found in second pass');
-
               const query = (node as any).query as Query;
+
+              function toQuery(obj: any): string {
+                return _.map(obj, (value, key) => {
+                  if (_.isEmpty(value)) return key;
+                  return `${key} { ${toQuery(value)} }`
+                }).join('\n');
+              }
 
               return ts.createTaggedTemplate(
                 ts.createIdentifier('gql'),
@@ -63,7 +87,7 @@ export function getTransformer(checker: ts.TypeChecker) {
                 ts.createNoSubstitutionTemplateLiteral(`
                   query { 
                     ${query.base} { 
-                      ${query.properties.join('\n')} 
+                      ${toQuery(query.properties)} 
                     }
                   }
                 `)
@@ -96,4 +120,3 @@ type Query = {
   base: string;
   properties: string[];
 };
-

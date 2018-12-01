@@ -13,22 +13,22 @@ describe('transformer', () => {
 exports.__esModule = true;
 var schema_1 = require('./schema');
 function getMovies() {
-  var movie = gql\`
+  var q = gql\`
     query {
-      Movie {
+      movie {
         id
         title
       }
     }
   \`;
-  console.log(movie.id + ' ' + movie.title);
+  console.log(q.id + ' ' + q.title);
 }
 getMovies();
 "
 `);
   });
 
-  it.only('nestedPropertyAccess', async function() {
+  it('nestedPropertyAccess', async function() {
     const file = `${__dirname}/../fixtures/nestedPropertyAccess.ts`;
     const result = await compile(file);
     expect(result).toMatchInlineSnapshot(`
@@ -38,14 +38,14 @@ var schema_1 = require('./schema');
 function getMovies() {
   var movie = gql\`
     query {
-      Movie {
+      movie {
         director {
           name
         }
       }
     }
   \`;
-  console.log('' + movie.director.name);
+  console.log(movie.director.name);
 }
 getMovies();
 "
@@ -63,7 +63,8 @@ function compile(file: string) {
       moduleResolution: ts.ModuleResolutionKind.NodeJs,
       noEmitOnError: false,
       stripInternal: true,
-      target: ts.ScriptTarget.Latest
+      target: ts.ScriptTarget.Latest,
+      removeComments: true
     });
     const options: CompilerOptions = {
       skipLibCheck: true
