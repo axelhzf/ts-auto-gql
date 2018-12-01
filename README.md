@@ -11,3 +11,4 @@ The main source of inspiration is https://github.com/sw-yx/babel-blade . The mai
 
 * https://github.com/sw-yx/babel-blade
 * https://github.com/firede/ts-transform-graphql-tag
+* https://github.com/fabiandev/ts-runtime

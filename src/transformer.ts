@@ -2,28 +2,45 @@ import * as ts from 'typescript';
 import { CompilerOptions } from 'typescript';
 
 // https://astexplorer.net/#/gist/62bc09174807d87fd95f2017ac1fd5e4/2ede6a7032c7a33f27a5ede888177678ea238484
-function getTransformer() {
+function getTransformer(checker: ts.TypeChecker) {
   function visitor(ctx: ts.TransformationContext, sf: ts.SourceFile) {
     const visitor: ts.Visitor = (node: ts.Node) => {
       if (ts.isFunctionDeclaration(node)) {
         // function declaration
-        const queries: Query[] = [];
+        const queries: any[] = [];
         const functionVisitor: ts.Visitor = (node: ts.Node) => {
-          const queryDefinition = getQueryDefinition(node);
-          if (queryDefinition) {
-            console.log('found in first pass', queryDefinition);
-            queries.push(queryDefinition);
-            (node as any).initializer.query = queryDefinition;
+          if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+            const type = checker.getTypeAtLocation(node);
+            if (type) {
+              const property = type.getProperty('__gql');
+              if (property) {
+                // slice detected
+                const queryDefinition: any = {
+                  node: node,
+                  base: type.symbol.getName(),
+                  properties: []
+                };
+                //console.log('found in first pass', queryDefinition);
+                queries.push(queryDefinition);
+                (node as any).initializer.query = queryDefinition;
+              }
+            }
           }
 
+
+          // checker.getRootSymbols(checker.getSymbolAtLocation(node))
+          // checker.getSymbolAtLocation(node.expression).getDeclarations()
           if (ts.isPropertyAccessExpression(node)) {
             if (ts.isIdentifier(node.expression)) {
-              const variableName = node.expression.text;
-              const query = queries.find(q => q.variableName === variableName);
+              const symbol = checker.getSymbolAtLocation(node.expression);
+              if (!symbol) return;
+              const declarations = symbol.getDeclarations();
+              if (!declarations) return;
+              const declaration = declarations[0];
+              const query = queries.find(q => q.node === declaration);
               if (query) {
-                if (ts.isIdentifier(node.name)) {
-                  query.properties.push(node.name.text);
-                }
+                query.properties.push(node.name.text);
+                console.log(query.properties);
               }
             }
           }
@@ -58,7 +75,7 @@ function getTransformer() {
         }
       }
 
-      if(ts.isImportDeclaration(node)) {
+      if (ts.isImportDeclaration(node)) {
         if (ts.isStringLiteral(node.moduleSpecifier)) {
           const text = node.moduleSpecifier.getText();
           if (text.match(/schema/)) {
@@ -71,9 +88,6 @@ function getTransformer() {
     return visitor;
   }
 
-
-
-
   return (ctx: ts.TransformationContext) => {
     return (sf: ts.SourceFile) => ts.visitNode(sf, visitor(ctx, sf));
   };
@@ -84,27 +98,6 @@ type Query = {
   base: string;
   properties: string[];
 };
-
-function getQueryExpression(node: ts.Node) {
-  if (
-    ts.isCallExpression(node) &&
-    ts.isPropertyAccessExpression(node.expression) &&
-    ts.isIdentifier(node.expression.expression) &&
-    node.expression.expression.text === 'Query'
-  ) {
-    return { base: node.expression.name.text, properties: [] };
-  }
-}
-
-function getQueryDefinition(node: ts.Node): Query | undefined {
-  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-    if (!node.initializer) return;
-    const variableName = node.name.text;
-    const query = getQueryExpression(node.initializer);
-    if (!query) return;
-    return { variableName, ...query };
-  }
-}
 
 function compile() {
   const files: string[] = [`${__dirname}/example/example1.ts`];
@@ -123,9 +116,10 @@ function compile() {
     skipLibCheck: true
   };
   const program = ts.createProgram(files, options, compilerHost);
+  const checker = program.getTypeChecker();
 
   let emitResult = program.emit(undefined, undefined, undefined, undefined, {
-    before: [getTransformer()]
+    after: [getTransformer(checker)]
   });
 
   let allDiagnostics = ts

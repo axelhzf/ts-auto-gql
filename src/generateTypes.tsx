@@ -6,6 +6,7 @@ import {
 } from 'graphql';
 import { readFileSync, writeFileSync } from 'fs';
 import * as _ from 'lodash';
+import prettier from 'prettier';
 
 function readSchema() {
   const path = `${__dirname}/example/schema.graphql`;
@@ -57,7 +58,6 @@ function renderQueryType(type: GraphQLObjectType): string {
   return out;
 }
 
-
 function renderScalarType(type: GraphQLScalarType) {
   const scalarName = type.name;
   if (scalarName === 'String') return 'string';
@@ -66,7 +66,9 @@ function renderScalarType(type: GraphQLScalarType) {
 }
 
 const gqlSchema = readSchema();
-const content = renderQueryType(gqlSchema.getQueryType()!);
+let content = renderQueryType(gqlSchema.getQueryType()!);
+content = prettier.format(content, { singleQuote: true, parser: 'typescript' });
+
 writeFileSync(
   `${__dirname}/example/schema.ts`,
   content,
