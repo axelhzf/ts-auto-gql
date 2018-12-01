@@ -2,23 +2,52 @@ import * as ts from 'typescript';
 import { CompilerOptions } from 'typescript';
 import { getTransformer } from '../transformer';
 import * as path from 'path';
+import prettier from 'prettier';
 
 describe('transformer', () => {
   it('basicPropertyAccess', async function() {
-    jest.setTimeout(10000);
-
     const file = `${__dirname}/../fixtures/basicPropertyAccess.ts`;
     const result = await compile(file);
     expect(result).toMatchInlineSnapshot(`
-"\\"use strict\\";
+"'use strict';
 exports.__esModule = true;
-var schema_1 = require(\\"./schema\\");
+var schema_1 = require('./schema');
 function getMovies() {
-    var movie = gql \`\\\\n                  query { \\\\n                    Movie { \\\\n                      id\\\\ntitle \\\\n                    }\\\\n                  }\\\\n                \`;
-    console.log(movie.id);
-    console.log(movie.title);
+  var movie = gql\`
+    query {
+      Movie {
+        id
+        title
+      }
+    }
+  \`;
+  console.log(movie.id + ' ' + movie.title);
 }
-console.log(getMovies());
+getMovies();
+"
+`);
+  });
+
+  it.only('nestedPropertyAccess', async function() {
+    const file = `${__dirname}/../fixtures/nestedPropertyAccess.ts`;
+    const result = await compile(file);
+    expect(result).toMatchInlineSnapshot(`
+"'use strict';
+exports.__esModule = true;
+var schema_1 = require('./schema');
+function getMovies() {
+  var movie = gql\`
+    query {
+      Movie {
+        director {
+          name
+        }
+      }
+    }
+  \`;
+  console.log('' + movie.director.name);
+}
+getMovies();
 "
 `);
   });
@@ -33,10 +62,8 @@ function compile(file: string) {
       module: ts.ModuleKind.CommonJS,
       moduleResolution: ts.ModuleResolutionKind.NodeJs,
       noEmitOnError: false,
-      noUnusedLocals: true,
-      noUnusedParameters: true,
       stripInternal: true,
-      target: ts.ScriptTarget.ES2018
+      target: ts.ScriptTarget.Latest
     });
     const options: CompilerOptions = {
       skipLibCheck: true
@@ -48,7 +75,9 @@ function compile(file: string) {
       undefined,
       (fileName: string, data: string) => {
         if (fileWithoutExtension(fileName) === fileWithoutExtension(absPath)) {
-          resolve(data);
+          resolve(
+            prettier.format(data, { singleQuote: true, parser: 'typescript' })
+          );
         }
       },
       undefined,
@@ -62,7 +91,7 @@ function compile(file: string) {
       .getPreEmitDiagnostics(program)
       .concat(emitResult.diagnostics);
 
-    allDiagnostics.forEach(diagnostic => {
+    const errorMessages = allDiagnostics.map(diagnostic => {
       if (diagnostic.file) {
         let { line, character } = diagnostic.file.getLineAndCharacterOfPosition(
           diagnostic.start!
@@ -71,16 +100,19 @@ function compile(file: string) {
           diagnostic.messageText,
           '\n'
         );
-        console.log(
-          `${diagnostic.file.fileName} (${line + 1},${character +
-            1}): ${message}`
-        );
+        return `${diagnostic.file.fileName} (${line + 1},${character +
+          1}): ${message}`;
       } else {
-        console.log(
-          `${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`
-        );
+        return `${ts.flattenDiagnosticMessageText(
+          diagnostic.messageText,
+          '\n'
+        )}`;
       }
     });
+
+    if (errorMessages.length > 0) {
+      throw new Error(errorMessages.join('\n\n'));
+    }
   });
 }
 

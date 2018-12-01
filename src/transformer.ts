@@ -1,5 +1,4 @@
 import * as ts from 'typescript';
-import { CompilerOptions } from 'typescript';
 
 // https://astexplorer.net/#/gist/62bc09174807d87fd95f2017ac1fd5e4/2ede6a7032c7a33f27a5ede888177678ea238484
 export function getTransformer(checker: ts.TypeChecker) {
@@ -26,7 +25,6 @@ export function getTransformer(checker: ts.TypeChecker) {
               }
             }
           }
-
 
           // checker.getRootSymbols(checker.getSymbolAtLocation(node))
           // checker.getSymbolAtLocation(node.expression).getDeclarations()
