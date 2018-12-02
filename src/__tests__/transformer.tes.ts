@@ -51,6 +51,31 @@ getMovies();
 "
 `);
   });
+
+  it('variableAssign', async function() {
+    const file = `${__dirname}/../fixtures/variableAssign.ts`;
+    const result = await compile(file);
+    expect(result).toMatchInlineSnapshot(`
+"'use strict';
+exports.__esModule = true;
+var schema_1 = require('./schema');
+function getMovies() {
+  var movie = gql\`
+    query {
+      movie {
+        director {
+          name
+        }
+      }
+    }
+  \`;
+  var director = movie.director;
+  console.log(director.name);
+}
+getMovies();
+"
+`);
+  });
 });
 
 function compile(file: string) {
@@ -112,7 +137,7 @@ function compile(file: string) {
     });
 
     if (errorMessages.length > 0) {
-      throw new Error(errorMessages.join('\n\n'));
+      reject(new Error(errorMessages.join('\n\n')));
     }
   });
 }
