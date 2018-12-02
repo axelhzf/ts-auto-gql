@@ -2,21 +2,16 @@ interface Person {
   name: string;
 }
 
-interface Movie2 {
-  __gql: boolean;
+interface Movie {
   id: string;
   title: string;
   year: number;
   director: Person;
+  actors: ReadonlyArray<Person>;
 }
 
-/*
-  @query movie
- */
-type MovieQuery = Movie2;
-
 interface Query {
-  movie(): MovieQuery;
+  movie(): Movie;
 }
 
 export const Query: Query = undefined as any;

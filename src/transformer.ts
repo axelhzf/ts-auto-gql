@@ -10,6 +10,12 @@ export function getTransformer(checker: ts.TypeChecker) {
       if (ts.isFunctionDeclaration(node)) {
         // function declaration
         const functionVisitor: ts.Visitor = (node: ts.Node) => {
+          // console.log('node', node.getText(sf), node.kind);
+
+          function visitEachChild() {
+            return ts.visitEachChild(node, functionVisitor, ctx);
+          }
+
           if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
             if (node.initializer) {
               const initializer = node.initializer;
@@ -21,59 +27,111 @@ export function getTransformer(checker: ts.TypeChecker) {
                 initializer.expression.expression.text === 'Query'
               ) {
                 const query = initializer.expression.name.text;
-                const data = { query, fields: {} };
+                const data = { query, fields: {}, isRootQuery: true };
                 treeData.setNodeData(node, data);
                 treeData.setNodeData(node.initializer, data); // TODO remove this when simplify generation
+              }
+            }
+
+            // Don't visit child here, let it pass
+          }
+
+          if (ts.isIdentifier(node)) {
+            const symbol = checker.getSymbolAtLocation(node);
+            if (symbol) {
+              const declarations = symbol.getDeclarations();
+              if (declarations) {
+                const data = treeData.getNodeData(declarations[0]);
+                if (data) {
+                  const nodeData = {
+                    query: data.query,
+                    fields: {}
+                  };
+                  treeData.setNodeData(node, data);
+                  console.log('identifier', node.getText(sf), nodeData);
+                }
               }
             }
           }
 
           if (ts.isPropertyAccessExpression(node)) {
-            const paths = [];
-            let current: any = node;
-
-            while (ts.isPropertyAccessExpression(current)) {
-              paths.unshift(current.name.text);
-              current = current.expression;
-            }
-
-            if (ts.isIdentifier(current)) {
-              const symbol = checker.getSymbolAtLocation(current);
-              if (!symbol) return;
-              const declarations = symbol.getDeclarations();
-              if (!declarations) return;
-              const data = treeData.getNodeData(declarations[0]);
-              if (data) {
-                let fields = data.fields;
-                paths.forEach(path => {
-                  if (!fields[path]) {
-                    fields[path] = {};
-                  }
-                  fields = fields[path];
-                });
-
-                treeData.setNodeData(node, {
-                  query: `${data.query}#${paths.join('.')}`,
-                  fields: fields
-                });
+            const result = visitEachChild();
+            const data = treeData.getNodeData(node.expression);
+            if (data) {
+              const field = node.name.text;
+              const symbol = checker.getSymbolAtLocation(node);
+              if (symbol) {
+                // TODO better detection of array methods. Check if type it is a method of Array or ReadOnlyArray
+                if (symbol.getName() === 'map') {
+                  treeData.setNodeData(node, data); // propagate the data but don't add array method as a field
+                  return result;
+                }
               }
+              const nestedField = {};
+              data.fields[field] = nestedField;
+              const nodeData = {
+                query: `${data.query}.${field}`,
+                fields: nestedField
+              };
+              treeData.setNodeData(node, nodeData);
+              console.log('property access', node.getText(sf), nodeData);
             }
+            return result;
           }
 
           if (ts.isVariableDeclaration(node)) {
-            if (
-              node.initializer &&
-              ts.isPropertyAccessExpression(node.initializer)
-            ) {
-              ts.visitEachChild(node, functionVisitor, ctx);
+            const result = visitEachChild();
+            if (node.initializer) {
               const data = treeData.getNodeData(node.initializer);
               if (data) {
                 treeData.setNodeData(node, data);
               }
             }
+            return result;
           }
 
-          return ts.visitEachChild(node, functionVisitor, ctx);
+          if (ts.isFunctionExpression(node)) {
+            const type = checker.getTypeAtLocation(node);
+            if (type) {
+              const callSignature = type.getCallSignatures()[0];
+              const parameters = callSignature.getParameters();
+              const parameter = parameters[0];
+              const parameterType = checker.getTypeOfSymbolAtLocation(
+                parameters[0],
+                node
+              );
+              // TODO Detect parameter type using type information
+              const data = {
+                query: `fragment#${parameter.getName()}`,
+                fields: {}
+              };
+              treeData.setNodeData(node.parameters[0], data); // Set data to parameter for access inside the function
+              treeData.setNodeData(node, data); // Set data to function expression to access outside the function
+            }
+            //console.log('function expression parent', node);
+
+            return visitEachChild();
+          }
+
+          if (ts.isCallExpression(node)) {
+            const result = ts.visitEachChild(node, functionVisitor, ctx);
+
+            const expressionData = treeData.getNodeData(node.expression);
+            if (expressionData) {
+              const argument = node.arguments[0];
+              if (argument) {
+                const argumentData = treeData.getNodeData(argument);
+                if (argumentData) {
+                  Object.assign(expressionData.fields, argumentData.fields);
+                  treeData.setNodeData(node, expressionData);
+                }
+              }
+            }
+
+            return result;
+          }
+
+          return visitEachChild();
         };
 
         ts.visitEachChild(node, functionVisitor, ctx);
@@ -81,7 +139,7 @@ export function getTransformer(checker: ts.TypeChecker) {
 
       if (ts.isCallExpression(node)) {
         const data = treeData.getNodeData(node);
-        if (data) {
+        if (data && data.isRootQuery) {
           function toQuery(obj: any): string {
             return _.map(obj, (value, key) => {
               if (_.isEmpty(value)) return key;
@@ -111,6 +169,7 @@ export function getTransformer(checker: ts.TypeChecker) {
           }
         }
       }
+
       return ts.visitEachChild(node, visitor, ctx);
     };
     return visitor;
@@ -130,6 +189,7 @@ type FieldAccess = { [key: string]: FieldAccess | {} };
 type NodeData = {
   query: string;
   fields: FieldAccess;
+  isRootQuery?: boolean;
 };
 
 class TreeData {
@@ -137,12 +197,12 @@ class TreeData {
 
   setNodeData(node: ts.Node, data: NodeData) {
     // @ts-ignore
-    node["gqlData"] = data;
+    node['gqlData'] = data;
     this.store.push(data);
   }
 
-  getNodeData(node: ts.Node) {
+  getNodeData(node: ts.Node): NodeData {
     // @ts-ignore
-    return node["gqlData"];
+    return node['gqlData'];
   }
 }

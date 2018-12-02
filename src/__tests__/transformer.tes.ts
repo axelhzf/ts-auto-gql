@@ -76,6 +76,35 @@ getMovies();
 "
 `);
   });
+
+  it('arrayMap', async function() {
+    const file = `${__dirname}/../fixtures/arrayMap.ts`;
+    const result = await compile(file);
+
+    console.log(result);
+
+    expect(result).toMatchInlineSnapshot(`
+"'use strict';
+exports.__esModule = true;
+var schema_1 = require('./schema');
+function getMovies() {
+  var movie = gql\`
+    query {
+      movie {
+        actors {
+          name
+        }
+      }
+    }
+  \`;
+  movie.actors.map(function(actor) {
+    console.log(actor.name);
+  });
+}
+getMovies();
+"
+`);
+  });
 });
 
 function compile(file: string) {
